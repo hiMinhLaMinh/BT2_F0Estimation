@@ -23,7 +23,7 @@ TRAIN_DIR = ROOT / "data" / "TinHieuHuanLuyen"
 RESULTS_DIR = ROOT / "results"
 
 
-def collect_confidence_stats(train_dir, f0_min=70, f0_max=400, yin_threshold=0.1):
+def collect_confidence_stats(train_dir, f0_min=70, f0_max=400, yin_threshold=0.2):
     train_dir = Path(train_dir)
     wav_files = sorted(train_dir.glob("*.wav"))
     if not wav_files:

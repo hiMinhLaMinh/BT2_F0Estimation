@@ -13,6 +13,7 @@ data/TinHieuHuanLuyen/*.wav
 data/TinHieuHuanLuyen/*.lab
 data/TinHieuKiemThu/*.wav
 data/TinHieuKiemThu/*.lab
+data/TinHieuHuanLuyen/*.txt
 
 # Hình vẽ/kết quả xuất ra khi chạy chương trình (tái tạo được từ code)
 output/*.png
@@ -24,4 +25,6 @@ output/*.pdf
 .idea/
 
 #miscellaneous
-Old/
+old/*
+files/*
+results/*

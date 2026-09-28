@@ -13,12 +13,13 @@ BT2_F0Estimation/
 ├── train.py              # thống kê confidence voiced/unvoiced trên tập huấn luyện
 ├── io_utils.py           # đọc .wav và .lab
 ├── pitch_estimation.py   # lõi thuật toán: framing, ACF, AMDF, AMDF+YIN
-├── evaluation.py         # (chưa viết) sai số F0mean/F0std, số lượng F0 so với .lab
+├── threshold.py          # tìm ngưỡng V/UV bằng binary search từ results/*.npy
+├── evaluation.py         # sai số F0mean/F0std và số lượng F0 so với .lab
 ├── visualization.py      # (chưa viết) vẽ hình theo yêu cầu đề bài
 ├── data/
 │   ├── TinHieuHuanLuyen/ # file huấn luyện (.wav + .lab)
 │   └── TinHieuKiemThu/   # file kiểm thử (.wav + .lab)
-├── results/              # (sinh ra) voiced_confidence.npy, unvoiced_confidence.npy
+├── results/              # (sinh ra) *_confidence.npy, optimal_threshold.txt
 └── requirements.txt
 ```
 
@@ -38,6 +39,10 @@ BT2_F0Estimation/
 
 **`train.py`**: duyệt `data/TinHieuHuanLuyen/`, gán nhãn từng khung theo `.lab` (theo tâm khung), tính `confidence`, in `meanV/stdV` (nhãn `v`) và `meanU/stdU` (nhãn `sil` + `uv` gộp chung), lưu mảng thô vào `results/` để đưa vào bước tìm ngưỡng (binary search / histogram từ BT1). Chạy: `python train.py`.
 
+**`threshold.py`**: nạp `results/voiced_confidence.npy` và `unvoiced_confidence.npy`, tìm ngưỡng T bằng binary search trên vùng giao nhau của hai phân bố (cân bằng độ nhầm lẫn giữa voiced và unvoiced), lưu T vào `results/optimal_threshold.txt`. Quy ước: `confidence >= T` là voiced. Chạy: `python threshold.py` (sau `train.py`).
+
+**`evaluation.py`**: nhận mảng F0 theo khung (khung unvoiced = `np.nan`) và file `.lab`, tính F0mean/F0std của thuật toán, độ lệch (có dấu, và theo %) so với F0mean/F0std trong `.lab`, cùng số F0 tìm được. `min_num_f0`/`max_num_f0` là tham số tuỳ chọn để gắn nhãn thấp/cao. `format_report` in bảng tổng hợp nhiều file.
+
 ## Định dạng `.lab`
 
 ```
@@ -51,5 +56,5 @@ F0std   18
 ## Quy trình
 
 1. `train.py`: thống kê `confidence` voiced/unvoiced trên tập huấn luyện
-2. Tìm ngưỡng V/UV và tinh chỉnh `threshold` của YIN trên tập huấn luyện
+2. `threshold.py`: tìm ngưỡng V/UV; thử các giá trị `threshold` của YIN (mỗi lần đổi phải chạy lại bước 1 và 2)
 3. `main.py`: chạy trên `TinHieuKiemThu/`, xuất figure, so F0mean/F0std và số lượng F0 với `.lab`

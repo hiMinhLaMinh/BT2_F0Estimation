@@ -107,3 +107,40 @@ def short_time_amdf_yin(frame, lag_min, lag_max, threshold=0.1):
 
     confidence = 1.0 - d_norm[chosen_lag]
     return lags, d, d_norm, chosen_lag, confidence
+
+def estimate_f0_track(signal, fs, f0_min, f0_max, vuv_threshold, yin_threshold=0.1, frame_length_ms=25, frame_shift_ms=10):
+    """
+    Tính toán mảng F0 theo thời gian cho toàn bộ tín hiệu.
+
+    Quy trình:
+    1. Chia tín hiệu thành các khung.
+    2. Với mỗi khung, tính confidence bằng AMDF+YIN.
+    3. Nếu confidence >= vuv_threshold: Khung là Voiced -> F0 = fs / chosen_lag.
+    4. Nếu confidence < vuv_threshold: Khung là Unvoiced -> F0 = np.nan.
+
+    Returns:
+        f0_track (np.ndarray): Mảng chứa giá trị F0 (Hz) tương ứng với mỗi khung.
+        centers_sec (list): Mảng chứa thời điểm tâm (giây) của mỗi khung.
+    """
+    # Lấy các khung tín hiệu và thời điểm tâm khung
+    frames, centers_sec = frame_signal(signal, fs, frame_length_ms, frame_shift_ms)
+    
+    # Tính toán dải lag cần tìm kiếm
+    lag_min, lag_max = f0_range_to_lag_range(fs, f0_min, f0_max)
+    
+    f0_track = []
+    
+    for frame in frames:
+        # Gọi thuật toán lõi AMDF+YIN để lấy chosen_lag và confidence
+        _, _, _, chosen_lag, confidence = short_time_amdf_yin(frame, lag_min, lag_max, threshold=yin_threshold)
+        
+        # Quyết định Voiced/Unvoiced dựa trên ngưỡng tối ưu (T)
+        if confidence >= vuv_threshold:
+            # Nếu là Voiced, chuyển đổi độ trễ (lag) thành tần số (F0)
+            f0 = fs / chosen_lag
+            f0_track.append(f0)
+        else:
+            # Nếu là Unvoiced, gán NaN (hoặc 0 tùy quy ước, ở đây dùng NaN theo đề bài)
+            f0_track.append(np.nan)
+            
+    return np.array(f0_track), centers_sec
