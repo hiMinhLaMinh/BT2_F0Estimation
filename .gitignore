@@ -1,0 +1,27 @@
+# Virtual environment
+venv/
+env/
+
+# Python cache
+__pycache__/
+*.pyc
+
+# Dữ liệu tín hiệu - KHÔNG push lên GitHub:
+# 1) đề bài yêu cầu rõ "Không upload file tín hiệu"
+# 2) file .wav thường nặng, không hợp để version-control bằng git thường
+data/TinHieuHuanLuyen/*.wav
+data/TinHieuHuanLuyen/*.lab
+data/TinHieuKiemThu/*.wav
+data/TinHieuKiemThu/*.lab
+
+# Hình vẽ/kết quả xuất ra khi chạy chương trình (tái tạo được từ code)
+output/*.png
+output/*.pdf
+
+# File hệ điều hành/IDE
+.DS_Store
+.vscode/
+.idea/
+
+#miscellaneous
+Old/
