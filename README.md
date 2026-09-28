@@ -1,60 +1,92 @@
 # BT2 – Tìm tần số cơ bản (F0) của tín hiệu tiếng nói
 
-Cài đặt AMDF (baseline + cải tiến YIN) và ACF baseline; thu thập thống kê để tìm ngưỡng voiced/unvoiced.
+Thuật toán chính: **Normalized Autocorrelation Function (ACF)** kết hợp:
+- Chuẩn hóa Pearson không thiên lệch theo độ trễ lag $k$.
+- Thuật toán chọn đỉnh cực đại địa phương nổi bật đầu tiên (**first prominent peak**) để chống lỗi chia đôi tần số (**pitch halving / bắt nhầm $2T_0$**).
+- Nội suy parabol quanh đỉnh cực đại để đạt độ chính xác dưới mẫu (**sub-sample accuracy**).
+- Bộ lọc năng lượng (**Short-Time Energy Gating**) loại bỏ triệt để điểm ảo trong khoảng lặng (**silence**).
+- Bộ lọc trung vị 5 điểm (**5-point Median Filter**) làm mượt đường pitch contour tự nhiên, triệt tiêu lỗi đột biến 1-2 khung.
 
-**Ràng buộc:** chỉ dùng `numpy` và `scipy.io.wavfile` cho xử lý tín hiệu (`matplotlib` chỉ để vẽ hình).
-**Cố định để xếp hạng:** frame length 25 ms, frame shift 10 ms, dải F0 tìm kiếm 70–400 Hz.
+> **Ghi chú:** Kết quả và mã nguồn cũ của phương pháp AMDF-YIN vẫn được lưu trữ nguyên vẹn trong thư mục `results_amdf_yin/` và trong `pitch_estimation.py`.
+
+---
+
+## Ràng buộc môn học
+- **Thư viện xử lý tín hiệu:** Chỉ dùng `numpy` và `scipy.io.wavfile` (`matplotlib` chỉ dùng để xuất đồ thị).
+- **Tham số chuẩn hóa để xếp hạng:** 
+  - Độ dài khung (**Frame length**): `25 ms`
+  - Độ dịch khung (**Frame shift**): `10 ms`
+  - Dải tần số $F_0$ khảo sát: `70 – 400 Hz`
+
+---
 
 ## Cấu trúc thư mục
 
 ```
 BT2_F0Estimation/
-├── main.py               # (chưa viết) điểm chạy duy nhất, xuất figure cho 4 file test
-├── train.py              # thống kê confidence voiced/unvoiced trên tập huấn luyện
-├── io_utils.py           # đọc .wav và .lab
-├── pitch_estimation.py   # lõi thuật toán: framing, ACF, AMDF, AMDF+YIN
-├── threshold.py          # tìm ngưỡng V/UV bằng binary search từ results/*.npy
-├── evaluation.py         # sai số F0mean/F0std và số lượng F0 so với .lab
-├── visualization.py      # (chưa viết) vẽ hình theo yêu cầu đề bài
+├── main.py                     # Điểm chạy duy nhất: duyệt 4 file test, xuất 4 figure & báo cáo
+├── train.py                    # Thu thập thống kê phân bố confidence Voiced/Unvoiced trên tập huấn luyện
+├── threshold.py                # Tìm ngưỡng tối ưu T bằng Binary Search
+├── demo_two_frames.py          # Xuất hình minh họa 2 khung tín hiệu (Voiced vs Unvoiced) theo mục 4 đề bài
+├── survey_frame_length.py      # Khảo sát ảnh hưởng độ dài khung (20ms, 25ms, 30ms) theo yêu cầu đề bài
+├── pitch_estimation.py         # Lõi thuật toán: framing, Normalized ACF, AMDF, AMDF+YIN
+├── evaluation.py               # Đánh giá sai số F0mean, F0std, độ lệch % và số lượng F0
+├── visualization.py            # Vẽ đồ thị Waveform và F0 Contour kèm Ground Truth
+├── io_utils.py                 # Đọc và chuẩn hóa file .wav, phân tích cú pháp file .lab
+├── instruction/                # Đề bài PDF của GV và tệp quan trọng
 ├── data/
-│   ├── TinHieuHuanLuyen/ # file huấn luyện (.wav + .lab)
-│   └── TinHieuKiemThu/   # file kiểm thử (.wav + .lab)
-├── results/              # (sinh ra) *_confidence.npy, optimal_threshold.txt
+│   ├── TinHieuHuanLuyen/       # 4 file huấn luyện: phone_F1, phone_M1, studio_F1, studio_M1 (.wav + .lab)
+│   └── TinHieuKiemThu/         # 4 file kiểm thử: phone_F2, phone_M2, studio_F2, studio_M2 (.wav + .lab)
+├── results/                    # Kết quả chạy thuật toán Normalized ACF:
+│   ├── optimal_threshold.txt   # Cấu hình tham số và ngưỡng T tối ưu (T ≈ 0.5918)
+│   ├── test_evaluation_report.txt # Bảng báo cáo sai số trên tập kiểm thử
+│   ├── frame_length_survey.txt # Bảng khảo sát ảnh hưởng độ dài khung (20ms vs 25ms vs 30ms)
+│   ├── confidence_histogram.png# Biểu đồ phân bố confidence và ngưỡng T
+│   ├── two_frames_illustration.png # Hình minh họa 2 khung tín hiệu Voiced & Unvoiced
+│   └── *_contour.png           # 4 hình vẽ pitch contour cho 4 file kiểm thử
+├── results_amdf_yin/           # Lưu trữ toàn bộ kết quả của bản chạy AMDF-YIN trước đó
 └── requirements.txt
 ```
 
-## Mô tả các file
+---
 
-**`io_utils.py`**: `load_wav_normalized` (đọc wav về float trong [-1, 1]), `parse_lab_file` (đọc segments và F0mean/F0std), `label_at_time` (nhãn của một thời điểm).
-
-**`pitch_estimation.py`**: hàm tính trên một khung, không đọc file.
-
-| Hàm | Mục đích |
-|---|---|
-| `frame_signal` | Chia khung 25/10 ms, trả về khung và thời điểm tâm khung |
-| `f0_range_to_lag_range` | Đổi dải F0 (Hz) sang dải lag (mẫu) |
-| `short_time_acf` | ACF baseline, trả về `R(k)` thô và `R(k)/R(0)` |
-| `short_time_amdf` | AMDF baseline |
-| `short_time_amdf_yin` | AMDF + cumulative mean normalization, chọn lag bằng "dip đầu tiên dưới ngưỡng", trả về `confidence = 1 - d'(lag)` |
-
-**`train.py`**: duyệt `data/TinHieuHuanLuyen/`, gán nhãn từng khung theo `.lab` (theo tâm khung), tính `confidence`, in `meanV/stdV` (nhãn `v`) và `meanU/stdU` (nhãn `sil` + `uv` gộp chung), lưu mảng thô vào `results/` để đưa vào bước tìm ngưỡng (binary search / histogram từ BT1). Chạy: `python train.py`.
-
-**`threshold.py`**: nạp `results/voiced_confidence.npy` và `unvoiced_confidence.npy`, tìm ngưỡng T bằng binary search trên vùng giao nhau của hai phân bố (cân bằng độ nhầm lẫn giữa voiced và unvoiced), lưu T vào `results/optimal_threshold.txt`. Quy ước: `confidence >= T` là voiced. Chạy: `python threshold.py` (sau `train.py`).
-
-**`evaluation.py`**: nhận mảng F0 theo khung (khung unvoiced = `np.nan`) và file `.lab`, tính F0mean/F0std của thuật toán, độ lệch (có dấu, và theo %) so với F0mean/F0std trong `.lab`, cùng số F0 tìm được. `min_num_f0`/`max_num_f0` là tham số tuỳ chọn để gắn nhãn thấp/cao. `format_report` in bảng tổng hợp nhiều file.
-
-## Định dạng `.lab`
+## Kết quả đánh giá trên tập kiểm thử (`TinHieuKiemThu`)
 
 ```
-0.00    0.46    sil      # biên_trái  biên_phải  nhãn (giây)
-0.46    1.39    v
-1.39    1.50    uv
-F0mean  122              # 2 dòng cuối: trung bình và độ lệch chuẩn F0 (Hz)
-F0std   18
+================================================================================
+BẢNG TỔNG HỢP SAI SỐ TRÊN TẬP KIỂM THỬ (TinHieuKiemThu)
+================================================================================
+File             F0mean  (chuẩn)    lệch   lệch%    F0std  (chuẩn)    lệch   lệch%   #F0
+----------------------------------------------------------------------------------------
+phone_F2          148.0    145.0    +3.0    +2.1     35.0     33.7    +1.3    +3.8   201
+phone_M2          130.4    129.0    +1.4    +1.1     17.2     18.6    -1.4    -7.5   123
+studio_F2         200.1    200.0    +0.1    +0.1     44.8     46.1    -1.3    -2.8   131
+studio_M2         155.1    155.0    +0.1    +0.0     30.9     30.8    +0.1    +0.3   117
+----------------------------------------------------------------------------------------
+Trung bình |lệch| trên 4/4 file: F0mean 1.16 Hz, F0std 1.01 Hz
 ```
 
-## Quy trình
+---
 
-1. `train.py`: thống kê `confidence` voiced/unvoiced trên tập huấn luyện
-2. `threshold.py`: tìm ngưỡng V/UV; thử các giá trị `threshold` của YIN (mỗi lần đổi phải chạy lại bước 1 và 2)
-3. `main.py`: chạy trên `TinHieuKiemThu/`, xuất figure, so F0mean/F0std và số lượng F0 với `.lab`
+## Hướng dẫn chạy chương trình
+
+Chạy tuần tự các bước sau từ thư mục `BT2_F0Estimation/`:
+
+1. **Bước 1: Huấn luyện và thu thập phân bố Voiced / Unvoiced**
+   ```bash
+   python train.py
+   ```
+2. **Bước 2: Tìm ngưỡng phân biệt Voiced / Unvoiced bằng Binary Search**
+   ```bash
+   python threshold.py
+   ```
+3. **Bước 3: Chạy kiểm thử, xuất 4 figure và in bảng tổng hợp sai số**
+   ```bash
+   python main.py
+   ```
+4. **Bước 4: Sinh các đồ thị phục vụ báo cáo / slide thuyết trình**
+   ```bash
+   python visualize_distribution.py   # Biểu đồ phân bố histogram
+   python demo_two_frames.py          # Minh họa 2 khung tín hiệu Voiced vs Unvoiced
+   python survey_frame_length.py      # Khảo sát độ dài khung 20ms, 25ms, 30ms
+   ```

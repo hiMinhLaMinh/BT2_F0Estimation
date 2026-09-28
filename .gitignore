@@ -28,3 +28,5 @@ output/*.pdf
 old/*
 files/*
 results/*
+results_amdf_yin/*
+instruction/*

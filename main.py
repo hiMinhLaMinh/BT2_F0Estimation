@@ -1,21 +1,21 @@
 """
-main.py - Điểm chạy duy nhất để đánh giá hiệu suất thuật toán trên tập Kiểm thử.
+main.py - Điểm chạy duy nhất để đánh giá hiệu suất thuật toán trên tập Kiểm thử (TinHieuKiemThu).
 
 Quy trình:
-1. Đọc ngưỡng tối ưu T và cấu hình từ results/optimal_threshold.txt (hoặc gán tay nếu file không có).
-2. Duyệt qua 4 file .wav trong thư mục TinHieuKiemThu.
-3. Ước lượng F0 (gọi hàm estimate_f0_track trong pitch_estimation.py).
-4. Tính toán sai số định lượng (F0mean/F0std) qua evaluation.py.
-5. Vẽ hình minh họa trực quan F0 Contour qua visualization.py.
+1. Đọc ngưỡng tối ưu T và cấu hình từ results/optimal_threshold.txt.
+2. Duyệt qua 4 file .wav trong thư mục TinHieuKiemThu (phone_F2, phone_M2, studio_F2, studio_M2).
+3. Ước lượng F0 (gọi hàm estimate_f0_track bằng Normalized ACF).
+4. Tính toán sai số định lượng (F0mean/F0std) so với file .lab qua evaluation.py.
+5. Xuất 4 figure thể hiện input waveform & output F0 contour qua visualization.py.
+6. In bảng tổng hợp sai số và lưu kết quả báo cáo.
 """
 
 import sys
-import numpy as np
 from pathlib import Path
+import numpy as np
 
-# Thêm đường dẫn để import các module tự viết
 ROOT = Path(__file__).resolve().parent
-TEST_DIR = ROOT / "data" / "TinHieuHuanLuyen"
+TEST_DIR = ROOT / "data" / "TinHieuKiemThu"
 RESULTS_DIR = ROOT / "results"
 
 from io_utils import load_wav_normalized
@@ -23,24 +23,26 @@ from pitch_estimation import estimate_f0_track
 from evaluation import evaluate_file, format_report
 from visualization import plot_f0_contour
 
-# --- 1. TẢI CẤU HÌNH TỪ QUÁ TRÌNH HUẤN LUYỆN ---
+
 def load_optimal_config():
-    """Đọc T, f0_min, f0_max, yin_threshold từ file optimal_threshold.txt"""
+    """Đọc T, dải F0, phương pháp từ file optimal_threshold.txt"""
     config_file = RESULTS_DIR / "optimal_threshold.txt"
-    
-    # Cấu hình mặc định nếu không tìm thấy file
+
     config = {
+        "method": "acf",
         "f0_min": 70,
         "f0_max": 400,
+        "optimal_T": 0.591812,
         "yin_threshold": 0.1,
-        "optimal_T": 0.522727 # Thay bằng giá trị bạn vừa tìm được
     }
 
     if config_file.exists():
         try:
             with open(config_file, "r", encoding="utf-8") as f:
                 for line in f:
-                    if "F0 Range" in line:
+                    if "Method" in line or "Phương pháp" in line:
+                        config["method"] = line.split(":")[-1].strip().lower()
+                    elif "F0 Range" in line or "Dải tần F0" in line:
                         parts = line.split(":")[-1].strip().split("-")
                         config["f0_min"] = int(parts[0].replace("Hz", "").strip())
                         config["f0_max"] = int(parts[1].replace("Hz", "").strip())
@@ -53,10 +55,10 @@ def load_optimal_config():
             print(f"[WARNING] Lỗi đọc {config_file.name}: {e}. Dùng cấu hình mặc định.")
     else:
         print("[WARNING] Không tìm thấy optimal_threshold.txt. Dùng cấu hình mặc định.")
-        
+
     return config
 
-# --- 2. CHƯƠNG TRÌNH CHÍNH ---
+
 def main():
     if not TEST_DIR.exists():
         print(f"Lỗi: Không tìm thấy thư mục kiểm thử tại {TEST_DIR}")
@@ -68,61 +70,68 @@ def main():
         sys.exit(1)
 
     config = load_optimal_config()
-    print("-" * 50)
-    print(f"CẤU HÌNH CHẠY KIỂM THỬ:")
-    print(f"- Dải F0: {config['f0_min']} - {config['f0_max']} Hz")
-    print(f"- Ngưỡng YIN: {config['yin_threshold']}")
-    print(f"- Ngưỡng V/UV (T): {config['optimal_T']:.6f}")
-    print("-" * 50)
+    RESULTS_DIR.mkdir(exist_ok=True, parents=True)
 
-    # Khởi tạo danh sách lưu kết quả evaluation
+    print("=" * 65)
+    print("CHẠY KIỂM THỬ TRÊN TẬP TÍN HIỆU KIỂM THỬ (TinHieuKiemThu):")
+    print(f"- Phương pháp: {config['method'].upper()} (Normalized Autocorrelation)")
+    print(f"- Dải F0 khảo sát: {config['f0_min']} Hz - {config['f0_max']} Hz")
+    print(f"- Ngưỡng tối ưu V/UV (T): {config['optimal_T']:.6f}")
+    print("=" * 65)
+
     all_results = []
 
-    # Duyệt qua từng file kiểm thử (theo yêu cầu duyệt qua 4 file)
     for wav_path in wav_files:
-        print(f"Đang xử lý file: {wav_path.name} ...")
+        print(f"-> Đang xử lý file: {wav_path.name} ...")
         lab_path = wav_path.with_suffix(".lab")
-        
+
         if not lab_path.exists():
-            print(f"  -> [Bỏ qua] Không tìm thấy file {lab_path.name}")
+            print(f"  [Bỏ qua] Không tìm thấy file nhãn chuẩn {lab_path.name}")
             continue
 
-        # 2.1. Đọc tín hiệu
+        # 1. Đọc tín hiệu
         fs, signal = load_wav_normalized(wav_path)
 
-        # 2.2. Ước lượng mảng F0 theo thời gian
+        # 2. Ước lượng F0 theo thời gian
         f0_track, centers_sec = estimate_f0_track(
             signal=signal,
             fs=fs,
             f0_min=config["f0_min"],
             f0_max=config["f0_max"],
             vuv_threshold=config["optimal_T"],
-            yin_threshold=config["yin_threshold"]
+            yin_threshold=config["yin_threshold"],
+            method=config["method"],
+            apply_median_filter=True,
         )
 
-        # 2.3. Đánh giá sai số so với file .lab
-        # Tham số min_num_f0, max_num_f0 có thể truyền tuỳ ý theo lời dặn của GV
-        result = evaluate_file(f0_track, lab_path, min_num_f0=100, max_num_f0=1000)
+        # 3. Đánh giá sai số so với file .lab
+        result = evaluate_file(f0_track, lab_path, min_num_f0=50, max_num_f0=500)
         all_results.append(result)
 
-        # 2.4. Vẽ đồ thị và lưu hình (Visualization)
-        # Giả định visualization.py có hàm plot_f0_contour(wav_path, lab_path, f0_track, centers_sec, output_path)
+        # 4. Xuất figure minh họa input waveform & output F0 contour
         output_fig_path = RESULTS_DIR / f"{wav_path.stem}_contour.png"
-        plot_f0_contour(wav_path, lab_path, f0_track, centers_sec, output_fig_path)
+        method_label = "Normalized ACF" if config["method"] == "acf" else "AMDF+YIN"
+        plot_f0_contour(wav_path, lab_path, f0_track, centers_sec, output_fig_path, method_name=method_label)
+        print(f"   Đã lưu figure: {output_fig_path.name}")
 
-    # --- 3. IN BẢNG BÁO CÁO TỔNG KẾT ---
+    # 5. In và lưu bảng báo cáo
     print("\n" + "=" * 80)
-    print("BẢNG TỔNG HỢP SAI SỐ TRÊN TẬP KIỂM THỬ")
+    print("BẢNG TỔNG HỢP SAI SỐ TRÊN TẬP KIỂM THỬ (TinHieuKiemThu)")
     print("=" * 80)
     report_text = format_report(all_results)
     print(report_text)
-    
-    # Lưu bảng báo cáo ra file text để copy vào Word
+
     report_file = RESULTS_DIR / "test_evaluation_report.txt"
     with open(report_file, "w", encoding="utf-8") as f:
-        f.write(report_text)
+        f.write("BẢNG TỔNG HỢP SAI SỐ TRÊN TẬP KIỂM THỬ (TinHieuKiemThu)\n")
+        f.write(f"Phương pháp: {config['method'].upper()}\n")
+        f.write(f"Ngưỡng T: {config['optimal_T']:.6f}\n")
+        f.write("-" * 80 + "\n")
+        f.write(report_text + "\n")
+
     print(f"\n[INFO] Đã lưu báo cáo sai số vào: {report_file}")
-    print(f"[INFO] Đã lưu 4 hình ảnh F0 contour vào thư mục: {RESULTS_DIR}")
+    print(f"[INFO] Đã hoàn thành xuất các figure vào: {RESULTS_DIR}")
+
 
 if __name__ == "__main__":
     main()

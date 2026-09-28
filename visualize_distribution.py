@@ -1,16 +1,25 @@
 """
 Script trực quan hóa phân bố Confidence của Voiced và Unvoiced.
-Giúp quan sát rõ vùng chồng lấp (overlap) giữa hai lớp dữ liệu.
+Giúp quan sát rõ vùng chồng lấp (overlap) giữa hai lớp dữ liệu và ngưỡng tối ưu T.
 """
 
+from pathlib import Path
 import numpy as np
 import matplotlib.pyplot as plt
-from pathlib import Path
-import os
 
-# Cấu hình đường dẫn
 ROOT = Path(__file__).resolve().parent
 RESULTS_DIR = ROOT / "results"
+
+
+def get_optimal_threshold_from_file():
+    cfg_file = RESULTS_DIR / "optimal_threshold.txt"
+    if cfg_file.exists():
+        with open(cfg_file, "r", encoding="utf-8") as f:
+            for line in f:
+                if "NGƯỠNG TỐI ƯU (T)" in line:
+                    return float(line.split("=")[-1].strip())
+    return None
+
 
 def plot_confidence_distribution(optimal_threshold=None):
     v_path = RESULTS_DIR / "voiced_confidence.npy"
@@ -21,49 +30,61 @@ def plot_confidence_distribution(optimal_threshold=None):
         print("Vui lòng chạy 'python train.py' trước để sinh dữ liệu.")
         return
 
-    # 1. Nạp dữ liệu
     print("Đang nạp dữ liệu confidence...")
     voiced_conf = np.load(v_path)
     unvoiced_conf = np.load(u_path)
 
-    # 2. Khởi tạo biểu đồ
-    plt.figure(figsize=(10, 6))
+    if optimal_threshold is None:
+        optimal_threshold = get_optimal_threshold_from_file()
 
-    # Vẽ histogram cho Unvoiced (Màu đỏ, trong suốt 60%)
-    plt.hist(unvoiced_conf, bins=50, alpha=0.6, color='red', 
-             label=f'Unvoiced (n={len(unvoiced_conf)})', edgecolor='black', linewidth=0.5)
+    plt.figure(figsize=(11, 6))
 
-    # Vẽ histogram cho Voiced (Màu xanh, trong suốt 60%)
-    plt.hist(voiced_conf, bins=50, alpha=0.6, color='blue', 
-             label=f'Voiced (n={len(voiced_conf)})', edgecolor='black', linewidth=0.5)
+    # Vẽ histogram cho Unvoiced (Đỏ) và Voiced (Xanh dương)
+    plt.hist(
+        unvoiced_conf,
+        bins=50,
+        alpha=0.55,
+        color="#ef4444",
+        label=f"Unvoiced (n={len(unvoiced_conf)}, μ={unvoiced_conf.mean():.3f})",
+        edgecolor="black",
+        linewidth=0.5,
+    )
 
-    # 3. Vẽ đường ranh giới Ngưỡng T (Nếu có cung cấp)
+    plt.hist(
+        voiced_conf,
+        bins=50,
+        alpha=0.55,
+        color="#3b82f6",
+        label=f"Voiced (n={len(voiced_conf)}, μ={voiced_conf.mean():.3f})",
+        edgecolor="black",
+        linewidth=0.5,
+    )
+
     if optimal_threshold is not None:
-        plt.axvline(x=optimal_threshold, color='green', linestyle='--', linewidth=2,
-                    label=f'Optimal T = {optimal_threshold:.4f}')
+        plt.axvline(
+            x=optimal_threshold,
+            color="#15803d",
+            linestyle="--",
+            linewidth=2.2,
+            label=f"Optimal T = {optimal_threshold:.4f}",
+        )
 
-    # 4. Trang trí biểu đồ
-    plt.title('Phân Bố Confidence: Voiced vs Unvoiced', fontsize=14, fontweight='bold')
-    plt.xlabel('Confidence Value', fontsize=12)
-    plt.ylabel('Số lượng Khung (Frames)', fontsize=12)
-    
-    # Thiết lập giới hạn trục X từ min đến max của toàn bộ dữ liệu
+    plt.title("Phân Bố Độ Tương Quan (Normalized ACF Peak Confidence): Voiced vs Unvoiced", fontsize=13, fontweight="bold")
+    plt.xlabel("Biên độ cực đại Normalized ACF", fontsize=11)
+    plt.ylabel("Số lượng khung (Frames)", fontsize=11)
+
     all_data = np.concatenate([voiced_conf, unvoiced_conf])
-    plt.xlim(max(0.0, np.min(all_data) - 0.05), min(1.0, np.max(all_data) + 0.05))
-    
+    plt.xlim(max(0.0, float(np.min(all_data)) - 0.05), min(1.0, float(np.max(all_data)) + 0.05))
+
     plt.legend(fontsize=11)
-    plt.grid(True, linestyle=':', alpha=0.7)
+    plt.grid(True, linestyle=":", alpha=0.6)
     plt.tight_layout()
 
-    # 5. Lưu và hiển thị
     out_file = RESULTS_DIR / "confidence_histogram.png"
     plt.savefig(out_file, dpi=300)
-    print(f"Đã lưu biểu đồ tại: {out_file}")
-    plt.show()
+    print(f"Đã lưu biểu đồ phân bố tại: {out_file}")
+    plt.close()
+
 
 if __name__ == "__main__":
-    # Bạn có thể điền giá trị T tối ưu tìm được từ threshold.py vào đây
-    # Ví dụ: T = 0.522727
-    T_OPTIMAL = 0.522727 
-    
-    plot_confidence_distribution(optimal_threshold=T_OPTIMAL)
+    plot_confidence_distribution()
